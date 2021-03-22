@@ -1,0 +1,147 @@
+import os
+from datetime import datetime
+import pandas as pd 
+import matplotlib.pyplot as plt
+import numpy as np
+os.chdir('\\\\a1\\dfs\\Strategy_and_Policy\\SI Projects & Databases\\Data analytics\\DCI\\Other\\FSE Latitude') #this is current unavailable since it's stored in local drive
+df = pd.read_excel('Copy of Latitude data set - LFA.0013.0002.0001.xlsx').fillna('') #read_excel will coerce blanks into NaN objects, so convert these to blanks
+
+#Check dates are valid
+def IsDate(date):
+    try:
+        d = date.to_pydatetime().date() #this will convert the timestamp object dates into datetime.date object 
+        if 2011 <=d.year <=2019 and 1 <= d.month <= 12 and 1 <= d.day <= 31:
+            return "Valid"
+        else: 
+            return "Invalid"
+    except Exception: #if d is unable to be converted to datetime.date from timestamp, return error
+        return "Error"
+
+IsDate_v = np.vectorize(IsDate) #Vectorise the function so we can use vector arguments
+
+#Test function for different dtypes 
+IsDate_v(np.append((df['d._Date_of_Credit_Card_Application'][0:2], df['f_(i)_store_name'][0:2]), df['h._Income_listed_in_the_application'][0:2]))
+
+#Apply date checks to date columns, as a new column
+df['date_check_columnD'] = IsDate_v(df['d._Date_of_Credit_Card_Application'])
+df['date_check_columnE'] = IsDate_v(df['e._Date_of_Credit_Card_Approval'])
+
+#Check for unique values, to see if there are any "Invalid" or "Error" responses
+print(pd.unique(df['date_check_columnD']))
+print(pd.unique(df['date_check_columnE']))
+
+#Convert dates into unix time (seconds passed from 1 Jan 1970) for time differences later
+df['dateD_converted'] = df['d._Date_of_Credit_Card_Application'].apply(lambda x: x.timestamp())
+df['dateE_converted'] = df['e._Date_of_Credit_Card_Approval'].apply(lambda x: x.timestamp())
+
+#Check income/debt fields
+def IsNumeric(x):
+    try:
+        if float(x)>=0:
+            return "Valid"
+        else:
+            return "Invalid" #this should capture blanks
+    except Exception: 
+        return "Error"
+
+IsNumeric_v = np.vectorize(IsNumeric) #Vectorize function
+
+#Check that blanks in f(i),(ii) categories do correspond with "Internet" category in f, and vice versa.
+condition1 = (df['f_(i)_store_name'] == '') & (df['f_(ii)_location'] == '') & (df['f._Source_of_Credit_Card_Application_'] == 'Internet')
+condition2 = (df['f_(i)_store_name'] != '') & (df['f_(ii)_location'] != '') & (df['f._Source_of_Credit_Card_Application_'] == 'Merchant')
+condition3 = (df['f_(i)_store_name'] == '') & (df['f_(ii)_location'] == '') & (df['f._Source_of_Credit_Card_Application_'] == 'Merchant') #Is it okay to have merchant with no location? was location an optional field? Check w/Lisa, valid for now
+df['Validate_Blanks']= np.select([condition1, condition2, condition3], ["Valid1", "Valid2", "Valid3"], "Invalid")
+print(pd.unique(df['Validate_Blanks']))
+len(df[df['Validate_Blanks']=="Valid3"])
+
+#Distribution of date columns
+plt.hist([df['d._Date_of_Credit_Card_Application'],df['e._Date_of_Credit_Card_Approval']], 
+    bins=40, label=['Application date','Approval date'])
+plt.xlabel('Date')
+plt.ylabel('Applications')
+plt.legend(loc='upper right')
+plt.show()
+#no obvious anomalies 
+
+#Distribution of income column
+fig, (plot1, plot2) = plt.subplots(ncols=2)
+fig.text(0.5, 0.01, 'Income', ha='center')
+fig.text(0.02, 0.5, 'Applications', va='center', rotation='vertical')
+plot1.hist(df['h._Income_listed_in_the_application'])
+plot1.set_title('Including outliers')
+plot2.hist(np.clip(df['h._Income_listed_in_the_application'],0,10000), bins=50)
+plot2.set_title('Outliers clipped to (0,10000)')
+plt.show()
+#Income distribution ranges up to $1mil. Latitude statement says they take weekly/fortnightly/monthly income in application so this looks weird. 
+
+#Check for duplicate names
+len(df[df['a._Name_of_applicant'].duplicated()]) #theres 133,394 duplicate names
+duplicates=df[df['a._Name_of_applicant'].duplicated(keep=False)].groupby(['a._Name_of_applicant', 'c._Postcode_of_consumer’s_residence']).size().reset_index(name='postcode_count')
+#using reset_index will realign aggregates to new df, otherwise it will be a vector. size() for counting elements within the groupings, and stores in new unmarked column '0'. keep=False considers all same values as duplicates.
+duplicates[duplicates['postcode_count']>1] #for duplicates of same name, same postcode
+#There were 133,394 duplicate names (non unique). However from these, there were 15,128 unique names that shared the same postcode
+
+#Check for duplicate names, by subsetting with validating postcodes of merchant branch
+df['merchant_state'] = df['f_(ii)_location'].str.split().str[-1] #new column containing state of branch
+def StateResidence(postcode):
+    if any( lower <= postcode <= upper for (lower,upper) in [(1000,1999),(2000,2599),(2619,2898),(2921,2999)]):
+        return 'NSW'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(3000,3999),(8000,8999)]):
+        return 'VIC'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(4000,4999),(9000,9999)]):
+        return 'QLD'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(6000,6797),(6800,6999)]):
+        return 'WA' 
+    elif any( lower <= postcode <= upper for (lower,upper) in [(5000,5799),(5800,5999)]):
+        return 'SA'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(7000,7799),(7800,7999)]):
+        return 'TAS'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(200,299),(2600,2618),(2900,2920)]):
+        return 'ACT'
+    elif any( lower <= postcode <= upper for (lower,upper) in [(800,899),(900,999)]):
+        return 'NT'
+StateResidence_v = np.vectorize(StateResidence) #Vectorise function so we can use vector arguments
+df['state_of_customer_residence'] = StateResidence_v(df['c._Postcode_of_consumer’s_residence'])
+
+condition4 = (df['merchant_state']==df['state_of_customer_residence']) #Local merchant applications
+condition5 = (pd.isnull(df['merchant_state'])) & (df['state_of_customer_residence'] !='') #Internet applications
+condition6 = (pd.notnull(df['merchant_state'])) & (df['merchant_state']!=df['state_of_customer_residence']) #Non-local merchant applications
+df['matching_states'] = np.select([condition4, condition5,condition6], ['Yes','Internet','No'],'Invalid')
+pd.unique(df['matching_states']) #Check there are no other conditions, ie. no 'Invalid' entries
+
+df[df['matching_states']=='No'] #Theres a quite a few interstate applications here.... potential issue to look into
+df.iloc[:,[0,2,7,14,15]][df['matching_states']=='No'][0:50]
+df[df['f._Source_of_Credit_Card_Application_']=='Merchant']
+
+#Moving on to subsetting, to find duplicates w matching merchant states
+matching_states=df[df['matching_states']=='Yes'] #First subset the population df into those with matching stats
+#Then filter to only include duplicated names, then group by names and postcode, and count this grouping in new df using reset_index()
+matching_states_duplicates=matching_states[matching_states['a._Name_of_applicant'].duplicated(keep=False)].groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence']).size().reset_index(name='postcode_count')
+matching_states_duplicates=matching_states_duplicates[matching_states_duplicates['postcode_count']>1].reset_index() #subset to those with more than 1 postcode count, ie. duplicate postcodes
+matching_states_duplicates
+#Subset 1: There are 9140 cases of 'unique' name groupings that could be the same person. Unique here is defined as people with same name, same postcode, and residence postcode matches postcode of merchant branch where they applied.
+
+#Next subset to those with large income ranges
+x=matching_states[matching_states.duplicated(subset=['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'], keep=False)] #This is just line 134, without the groupby.
+#Next we will create the same groupings as done in matching_states_duplicates, but this time using min/max aggregators
+max_incomes=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['h._Income_listed_in_the_application'].max().reset_index().rename(columns={'h._Income_listed_in_the_application':'Max_income'})
+min_incomes=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['h._Income_listed_in_the_application'].min().reset_index().rename(columns={'h._Income_listed_in_the_application':'Min_income'})
+
+#do the same for converted dates to find time differences, and then convert them back into proper dates.
+latest_dateD=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['dateD_converted'].max().reset_index().rename(columns={'dateD_converted':'latest_date'})
+latest_dateD['date']=latest_dateD['latest_date'].apply(lambda x: datetime.fromtimestamp(x).date())
+earliest_dateD=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['dateD_converted'].min().reset_index().rename(columns={'dateD_converted':'earliest_date'})
+earliest_dateD['date']=earliest_dateD['earliest_date'].apply(lambda x: datetime.fromtimestamp(x).date())
+latest_dateE=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['dateE_converted'].max().reset_index().rename(columns={'dateE_converted':'latest_date'})
+latest_dateE['date']=latest_dateE['latest_date'].apply(lambda x: datetime.fromtimestamp(x).date())
+earliest_dateE=x.groupby(['a._Name_of_applicant','c._Postcode_of_consumer’s_residence'])['dateE_converted'].min().reset_index().rename(columns={'dateE_converted':'earliest_date'})
+earliest_dateE['date']=earliest_dateE['earliest_date'].apply(lambda x: datetime.fromtimestamp(x).date())
+dateD_range= latest_dateD['date']-earliest_dateD['date']
+dateE_range= latest_dateE['date']-earliest_dateE['date']
+
+df_list=[matching_states_duplicates, min_incomes['Min_income'], max_incomes['Max_income'], earliest_dateD['date'], latest_dateD['date'], dateD_range] #create a list of dataframes to append in next line
+final_subset=pd.concat(df_list, axis=1) #appending the min and max income datasets onto the initial duplicates dataset.
+final_subset.to_csv('QA_python.csv', encoding='utf-8', index=False) #for QAing purposes
+
+final_subset[2*final_subset['Min_income']<=final_subset['Max_income']]
+#Subset 2: There are 487 cases of unique name groupings where the max income in the group is more than 2x the min income.

@@ -43,7 +43,7 @@ def IsNumeric(x):
             return "Invalid" #this should capture blanks
     except Exception: 
         return "Error"
-
+        
 IsNumeric_v = np.vectorize(IsNumeric) #Vectorize function
 
 #Check that blanks in f(i),(ii) categories do correspond with "Internet" category in f, and vice versa.
@@ -54,14 +54,13 @@ df['Validate_Blanks']= np.select([condition1, condition2, condition3], ["Valid1"
 print(pd.unique(df['Validate_Blanks']))
 len(df[df['Validate_Blanks']=="Valid3"])
 
-#Distribution of date columns
+#Distribution of date columns (no obvious anomalies)
 plt.hist([df['d._Date_of_Credit_Card_Application'],df['e._Date_of_Credit_Card_Approval']], 
     bins=40, label=['Application date','Approval date'])
 plt.xlabel('Date')
 plt.ylabel('Applications')
 plt.legend(loc='upper right')
 plt.show()
-#no obvious anomalies 
 
 #Distribution of income column
 fig, (plot1, plot2) = plt.subplots(ncols=2)

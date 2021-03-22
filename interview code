@@ -3,8 +3,7 @@ from datetime import datetime
 import pandas as pd 
 import matplotlib.pyplot as plt
 import numpy as np
-os.chdir('\\\\a1\\dfs\\Strategy_and_Policy\\SI Projects & Databases\\Data analytics\\DCI\\Other\\FSE Latitude') #this is current unavailable since it's stored in local drive
-df = pd.read_excel('Copy of Latitude data set - LFA.0013.0002.0001.xlsx').fillna('') #read_excel will coerce blanks into NaN objects, so convert these to blanks
+os.chdir('\\\\a1\\dfs\') #this is current unavailable since it's stored in local drive
 
 #Check dates are valid
 def IsDate(date):
@@ -71,7 +70,6 @@ plot1.set_title('Including outliers')
 plot2.hist(np.clip(df['h._Income_listed_in_the_application'],0,10000), bins=50)
 plot2.set_title('Outliers clipped to (0,10000)')
 plt.show()
-#Income distribution ranges up to $1mil. Latitude statement says they take weekly/fortnightly/monthly income in application so this looks weird. 
 
 #Check for duplicate names
 len(df[df['a._Name_of_applicant'].duplicated()]) #theres 133,394 duplicate names
